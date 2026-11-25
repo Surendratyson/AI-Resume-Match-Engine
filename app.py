@@ -3,6 +3,7 @@ import PyPDF2
 import spacy
 import pandas as pd
 import re
+import io
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
@@ -35,7 +36,7 @@ def load_match_models():
     ]
 
     skill_patterns = [{"label": "SKILL", "pattern": skill} for skill in raw_skills]
-    ruler.add_patterns(skill_patterns)
+    ruler.add_patterns(skill_patterns) # type: ignore
     return sbert_model, nlp
 
 @st.cache_resource
@@ -66,13 +67,19 @@ sbert_model, nlp = load_match_models()
 class_vectorizer, class_encoder, class_model = load_classifier()
 
 def extract_text_from_pdf(uploaded_file):
-    pdf_reader = PyPDF2.PdfReader(uploaded_file)
-    text = ""
-    for page in pdf_reader.pages:
-        extracted = page.extract_text()
-        if extracted:
-            text += extracted + " "
-    return text.strip()
+    try:
+        file_bytes = uploaded_file.getvalue()
+        if not file_bytes:
+            return ""
+        pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+        text = ""
+        for page in pdf_reader.pages:
+            extracted = page.extract_text()
+            if extracted:
+                text += extracted + " "
+        return text.strip()
+    except Exception:
+        return ""
 
 def extract_skills(text):
     doc = nlp(text.lower())
@@ -129,7 +136,7 @@ if st.button("Run ATS Engine"):
 
                 # Predict Job Category
                 predicted_category = "Unknown"
-                if class_model is not None:
+                if class_model is not None and class_vectorizer is not None and class_encoder is not None:
                     resume_features = class_vectorizer.transform([resume_text])
                     cat_num = class_model.predict(resume_features)
                     predicted_category = class_encoder.inverse_transform(cat_num)[0].replace('-', ' ').title()
